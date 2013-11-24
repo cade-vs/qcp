@@ -1,9 +1,10 @@
 #!/usr/bin/perl
 ##############################################################################  
 #
-#  QCP -- Quick Quake Network Copy :)
+#  QCPv2 -- Quick Quake Network Copy :)
 #  2005-2013 (c) Vladi Belperchinov-Shabanski "Cade" 
 #  <cade@cpan.org> <cade@bis.bg> <cade@biscom.net> <cade@datamax.bg>
+#  v 2.0 2013/11/23
 #  v 1.9 2005/02/04
 #
 #  quick quake network copy :) 
@@ -26,17 +27,20 @@
 use strict;
 use IO::Socket::INET;
 use IO::Select;
+#use Data::Dumper;
 
 my ( $me ) = $0 =~ /([^\/]+)$/g;
 
-our $PUSH_PORT     = 8701;
-our $PULL_PORT     = 8702;
-our $DATA_PORT     = 8703;
-our $PEER_WAIT     = 60; # seconds ...
-our $BUFSIZE       = 64*1024;
-our $CONFIRM_COUNT = 10;
+our $QCP_REV       = "2";
 
-our %FRIENDS       = ( '255.255.255.255' => 1 );
+our $ANNO_PORT     = 28701; # announce port
+our $DATA_PORT_LO  = 28710;
+our $DATA_PORT_HI  = 28790;
+
+our $PEER_WAIT     = 60; # wait for peer to connect, in seconds ...
+our $BUFSIZE       = 64*1024;
+
+our %PEERS         = ( '255.255.255.255' => 1 );
 our %BROADCAST_OPT = ( '0.0.0.0'         => 1, 
                        '255.255.255.255' => 1 ); # only 2 really
 
@@ -59,17 +63,22 @@ $| = 1;
 our $HELP = '
 usage: qcp [options] files...
 
-sending files (need to specify arguments):    
+sending files (server side) needs to specify files and/or directories:    
   qcp file1 dir1 file2 ...
 
-receiving files (no arguments specified):
+receiving files (client side) needs no arguments at all:
   qcp
 
+by default qcp will try to auto-discover both peers (server and client side)
+
 options:
-  -a host     -- add peer host to the friends list (optional)
-  -p host     -- try to connect to this peer, no broadcast!
+  -a host     -- add peer host to the peers list (optional subnet broadcast)
+  -h host     -- connect to this peer host address, no broadcast!
   -s          -- force server mode (regardless file arguments)
   -c          -- force client mode (regardless file arguments)
+  -w seconds  -- sets timeout wait in seconds for all operations
+  -p p1:p2:p3 -- sets announce port (p1) and data port range (p2..p3)
+                 default are: announce 28701, data range 28710..28790  
   --          -- end of options, arguments after "--" are files
 
 notes:
@@ -83,8 +92,8 @@ notes:
 credits:
   QCP is short for Quick Quake Network Copy :)
   QCP is inspired by ncp (http://www.fefe.de/ncp/) but implemented in Perl
-  (c) Vladi Belperchinov-Shabanski "Cade" <cade@biscom.net> <cade@datamax.bg>
-  $Id: qcp,v 1.9 2005/02/04 17:28:06 cade Exp $
+  2005-2013 (c) Vladi Belperchinov-Shabanski "Cade"
+                <cade@bis.bg> <cade@cpan.org> <cade@datamax.bg>
 ';
 
 ### opts #####################################################################
@@ -99,13 +108,20 @@ while( $_ = shift @ARGV )
     }
   if( /^-a/io )
     {
-    $FRIENDS{ shift() }++;
+    $PEERS{ shift() }++;
     next;
     }
-  if( /^-p/io )
+  if( /^-h/io )
     {
-    %FRIENDS = ();
-    $FRIENDS{ shift() }++;
+    %PEERS = ();
+    $PEERS{ shift() }++;
+    # FIXME: skip broadcast in this case
+    next;
+    }
+  if( /^-w/io )
+    {
+    $PEER_WAIT = shift;
+    $PEER_WAIT = 60 if $PEER_WAIT < 1;
     next;
     }
   if( /^-s/io )
@@ -126,8 +142,8 @@ while( $_ = shift @ARGV )
   push @args, $_;
   }
 
-my $friends = load_hash( "$CFG_DIR/friends" );
-%FRIENDS = ( %FRIENDS, %$friends ) if $friends;
+my $peers = load_hash( "$CFG_DIR/peers" );
+%PEERS = ( %PEERS, %$peers ) if $peers;
 
             
 $MODE ||= @args ? 'push' : 'pull';
@@ -138,30 +154,19 @@ die "no such mode '$MODE'\n" unless $mr;
 
 $mr->();
 
-save_hash( "$CFG_DIR/friends", \%FRIENDS );
+save_hash( "$CFG_DIR/friends", \%PEERS );
 
 ##############################################################################
 
 sub mode_push
 {
   my $argc = @args;
-  print "server mode, offering $argc item(s): ";
+  my $argc_s = $argc > 1 ? 'items' : 'item';
+  print "server mode, offering $argc $argc_s: ";
   
-  my $peer = find_peer( $PUSH_PORT, $PULL_PORT );
-  return unless $peer;
-  
-  my $srv  = IO::Socket::INET->new( LocalPort => $DATA_PORT,
-                                    Proto     => 'tcp',
-                                    Listen    => 5,
-                                    Timeout   => 32,
-                                    ReuseAddr => 1 )
-                                  or die "listen: socket error: $@\n";
-  
-  my $sock = $srv->accept() or die "accept: socket error: $@\n";
-  
-  my $lpeer = $sock->peerhost();
-  print "warning: wrong peer, got $lpeer, expected $peer\n" unless $lpeer eq $peer;
-  
+  my $peer_sock = server_announce();
+  return unless $peer_sock;
+
   for( @args )
     {
     $_ = /'/ ? "\"$_\"" : "\'$_\'" # '
@@ -176,7 +181,7 @@ sub mode_push
     my $res = $i->read( $_, $BUFSIZE );
     last unless $res;
     $bytes += $res;
-    $sock->print( $_ );
+    $peer_sock->print( $_ );
     }
   close( $i );
   report_stats( $start, $bytes );
@@ -185,34 +190,16 @@ sub mode_push
 sub mode_pull
 {
   print "client mode: ";
-  
-  my $peer = find_peer( $PULL_PORT, $PUSH_PORT );
-  return unless $peer;
-  sleep(1);
-  
-  my $sock;
-  my $c = $PEER_WAIT;
-  print "connecting to $peer:$DATA_PORT ...";
-  while( $c-- )
-    {
-    $sock = IO::Socket::INET->new( PeerPort  => $DATA_PORT,
-                                   PeerAddr  => $peer,
-                                   Proto     => 'tcp',
-                                   Timeout   => 32, );
-    last if $sock;
-    print ".";
-    sleep 1;
-    }                              
-  die "connect: socket error: $@\n" if $@;
-  die "connection timeout\n" unless $sock;
-  print "\n";
-  
+
+  my $peer_sock = client_find_server();
+  return unless $peer_sock;
+
   my $start = time();
   my $bytes = 0;
   open( my $o, "| tar xpvvf -" ) or die "target data open error: $@\n";
   while(4)
     {
-    my $res = $sock->read( $_, $BUFSIZE );
+    my $res = $peer_sock->read( $_, $BUFSIZE );
     last unless $res;
     $bytes += $res;
     $o->print( $_ );
@@ -249,60 +236,119 @@ sub num_fmt
   return $data;
 }
 
-sub find_peer
+sub server_announce
 {
-  my $local_port  = shift;
-  my $remote_port = shift;
+  my $pcnt = $DATA_PORT_HI - $DATA_PORT_LO;
+  my $pcc  = $DATA_PORT_LO + int(rand($pcnt));
 
-  my $sock = IO::Socket::INET->new( LocalPort => $local_port,
-                                    LocalAddr => '0.0.0.0',
-                                    Proto     => 'udp',
-                                    Broadcast => 1,
-                                    ) 
-                                  or die "find listen socket error: $@\n";
-                                  
-  my $select = IO::Select->new();
-  my $peer;
+  my $server_sock;
+  while( $pcnt-- )
+    {
+    $server_sock = IO::Socket::INET->new( 
+                                          LocalPort => $pcc,
+                                          Proto     => 'tcp',
+                                          Listen    => 5,
+                                          Timeout   => 1,
+                                          ReuseAddr => 1 
+                                        );
+    die "listen: socket error: $@\n" if ! $server_sock and ! $!{EADDRINUSE};
+    last if $server_sock;
+    $pcc++;
+    $pcc = $DATA_PORT_LO if $pcc > $DATA_PORT_HI;
+    }
 
-  $select->add( $sock );
+  die "listen: no available ports in the range $DATA_PORT_LO..$DATA_PORT_HI\n" unless $server_sock;
+
+  print "announcing data port $pcc...";
   
+  my $sock;
   my $wait = $PEER_WAIT;
-  print "searching peer ...";
   while( $wait-- )
     {
-    ping_friend( $remote_port, $_, 'PING' ) for keys %FRIENDS;
-    
-    my $msg;
-    if( $select->can_read( 1 ) )
-      {
-      $sock->recv( $msg, 128, 0 );
-      $peer = $sock->peerhost();
-      print "\npeer found at $peer\n";
-      ping_friend( $remote_port, $peer, 'PING' ) for 1 .. $CONFIRM_COUNT;
-      $FRIENDS{ $peer }++;
-      return $peer;  
-      }
+    ping_peer( $_, "QCP_REV=$QCP_REV:PORT=$pcc" ) for keys %PEERS;
+    $sock = $server_sock->accept();
+    last if $sock;
     print ".";
-    sleep 1;
     }
-  print "\npeer not found\n";
-  return undef;  
+  if( ! $sock )
+    {
+    die "timeout\n";
+    }
+  
+  my $peer_host = $sock->peerhost();
+  print "connected from: $peer_host\n";
+
+  return $sock;
 }
 
-sub ping_friend
+sub ping_peer
 {
-  my $remote_port = shift;
   my $remote_host = shift;
   my $msg         = shift;
-#print ">>> $remote_host, ", ( $BROADCAST_OPT{ $remote_host } || 0 ), "\n";
-  my $sock = IO::Socket::INET->new( PeerPort  => $remote_port,
+
+  my $sock = IO::Socket::INET->new( PeerPort  => $ANNO_PORT,
                                     PeerAddr  => $remote_host,
                                     Proto     => 'udp',
                                     Broadcast => ( $BROADCAST_OPT{ $remote_host } || 0 ), 
                                     ) 
-                                  or die "ping friend socket error: $@\n";
+                                  or die "ping peer socket error: $@\n";
   $sock->send( $msg );
   return;
+}
+
+sub client_find_server
+{
+  my $lsock = IO::Socket::INET->new( 
+                                     LocalPort => $ANNO_PORT,
+                                     LocalAddr => '0.0.0.0',
+                                     Proto     => 'udp',
+                                     Broadcast => 1,
+                                   ) 
+                                  or die "find listen socket error: $@\n";
+                                  
+  my $select = IO::Select->new();
+  my $peer_host;
+  my $peer_port;
+
+  $select->add( $lsock );
+  
+  my $wait = $PEER_WAIT;
+  print "searching peer...";
+  while( $wait-- )
+    {
+    my $msg;
+    if( ! $select->can_read( 1 ) )
+      {
+      print ".";
+      sleep 1;
+      next;
+      }
+    $lsock->recv( $msg, 128, 0 );
+    $peer_host = $lsock->peerhost();
+    print "\npeer found at $peer_host ($msg)\n";
+    $PEERS{ $peer_host }++;
+    
+    my %msg = map { split /=/ } split /:/, $msg;
+    # print Dumper( 'parsed message', \%msg );
+    
+    $peer_port = $msg{ 'PORT' };
+    last;
+    }
+
+  if( ! $peer_host or ! $peer_port )
+    {
+    die "not enough info to connect [$peer_host:$peer_port]\n";
+    }
+    
+  print "connecting to $peer_host:$peer_port\n";
+  my $peer_sock = IO::Socket::INET->new( PeerPort  => $peer_port,
+                                         PeerAddr  => $peer_host,
+                                         Proto     => 'tcp',
+                                         Timeout   => $PEER_WAIT, );
+                                         
+  die "connection error: $!\n" unless $peer_sock;
+                                         
+  return $peer_sock;  
 }
 
 ### utilities ################################################################
