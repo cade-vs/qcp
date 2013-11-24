@@ -4,11 +4,11 @@ QCP -- Quick Quake Network Copy
 
 # SYNOPSIS
 
-  # sending files/directories
-  qcp file1 file2 dir3...
+    # sending files/directories
+    qcp file1 file2 dir3...
   
-  # receiving content (files/dirs/etc.)
-  qcp
+    # receiving content (files/dirs/etc.)
+    qcp
 
 # DESCRIPTION
 
