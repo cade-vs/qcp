@@ -1,0 +1,365 @@
+#!/usr/bin/perl
+##############################################################################  
+#
+#  QCP -- Quick Quake Network Copy :)
+#  2005-2013 (c) Vladi Belperchinov-Shabanski "Cade" 
+#  <cade@cpan.org> <cade@bis.bg> <cade@biscom.net> <cade@datamax.bg>
+#  v 1.9 2005/02/04
+#
+#  quick quake network copy :) 
+#  this is inspired by ncp -- http://www.fefe.de/ncp/ but implemented in Perl
+#
+#  goal is to copy files over the net without passwords, host addresses, etc.
+#  usage:
+#
+#  server side:  qcp files...
+#  client side:  qcp
+# 
+#  i.e. server side or the point where you want to copy files from needs to run
+#  qcp with all arguments representing files which should be copied. the client
+#  side has no arguments. both sides will try to find each other automatically.
+#
+#
+#  THIS FILE IS DISTRIBUTED UNDER GNU GPL LICENSE
+#
+##############################################################################
+use strict;
+use IO::Socket::INET;
+use IO::Select;
+
+my ( $me ) = $0 =~ /([^\/]+)$/g;
+
+our $PUSH_PORT     = 8701;
+our $PULL_PORT     = 8702;
+our $DATA_PORT     = 8703;
+our $PEER_WAIT     = 60; # seconds ...
+our $BUFSIZE       = 64*1024;
+our $CONFIRM_COUNT = 10;
+
+our %FRIENDS       = ( '255.255.255.255' => 1 );
+our %BROADCAST_OPT = ( '0.0.0.0'         => 1, 
+                       '255.255.255.255' => 1 ); # only 2 really
+
+# this is more complex than it should but qcp may evolve in the future :)
+our %MODE = (
+            'push' => \&mode_push,
+            'pull' => \&mode_pull,
+            );
+
+our $MODE;
+
+our $CFG_DIR       = $ENV{ 'HOME' } . "/.qcp";
+mkdir( $CFG_DIR, 0700 ) unless -d $CFG_DIR;
+-d $CFG_DIR or print "warning: config directory $CFG_DIR does not exist\n";
+
+$| = 1;
+
+### help #####################################################################
+
+our $HELP = '
+usage: qcp [options] files...
+
+sending files (need to specify arguments):    
+  qcp file1 dir1 file2 ...
+
+receiving files (no arguments specified):
+  qcp
+
+options:
+  -a host     -- add peer host to the friends list (optional)
+  -p host     -- try to connect to this peer, no broadcast!
+  -s          -- force server mode (regardless file arguments)
+  -c          -- force client mode (regardless file arguments)
+  --          -- end of options, arguments after "--" are files
+
+notes:
+  * any argument starting with dash "-" is considered an option
+  * qcp tries to find peers by broadcasting
+  * if qcp cannot find the peer, -a should be used
+  * only the one side (sender or receiver) needs -a
+  * -p does not broadcast! it will accept only specified host
+  * qcp remembers peers so -a is required just the first time
+
+credits:
+  QCP is short for Quick Quake Network Copy :)
+  QCP is inspired by ncp (http://www.fefe.de/ncp/) but implemented in Perl
+  (c) Vladi Belperchinov-Shabanski "Cade" <cade@biscom.net> <cade@datamax.bg>
+  $Id: qcp,v 1.9 2005/02/04 17:28:06 cade Exp $
+';
+
+### opts #####################################################################
+
+our @args;
+while( $_ = shift @ARGV )
+  {
+  if( /^--+$/io )
+    {
+    push @args, @ARGV;
+    last;
+    }
+  if( /^-a/io )
+    {
+    $FRIENDS{ shift() }++;
+    next;
+    }
+  if( /^-p/io )
+    {
+    %FRIENDS = ();
+    $FRIENDS{ shift() }++;
+    next;
+    }
+  if( /^-s/io )
+    {
+    $MODE = 'push';
+    next;
+    }
+  if( /^-c/io )
+    {
+    $MODE = 'pull';
+    next;
+    }
+  if( /^(--?h(elp)?|help)$/io )
+    {
+    print $HELP;
+    exit;
+    }
+  push @args, $_;
+  }
+
+my $friends = load_hash( "$CFG_DIR/friends" );
+%FRIENDS = ( %FRIENDS, %$friends ) if $friends;
+
+            
+$MODE ||= @args ? 'push' : 'pull';
+
+my $mr = $MODE{ $MODE };
+
+die "no such mode '$MODE'\n" unless $mr;
+
+$mr->();
+
+save_hash( "$CFG_DIR/friends", \%FRIENDS );
+
+##############################################################################
+
+sub mode_push
+{
+  my $argc = @args;
+  print "server mode, offering $argc item(s): ";
+  
+  my $peer = find_peer( $PUSH_PORT, $PULL_PORT );
+  return unless $peer;
+  
+  my $srv  = IO::Socket::INET->new( LocalPort => $DATA_PORT,
+                                    Proto     => 'tcp',
+                                    Listen    => 5,
+                                    Timeout   => 32,
+                                    ReuseAddr => 1 )
+                                  or die "listen: socket error: $@\n";
+  
+  my $sock = $srv->accept() or die "accept: socket error: $@\n";
+  
+  my $lpeer = $sock->peerhost();
+  print "warning: wrong peer, got $lpeer, expected $peer\n" unless $lpeer eq $peer;
+  
+  for( @args )
+    {
+    $_ = /'/ ? "\"$_\"" : "\'$_\'" # '
+    }
+  my $args = join ' ', @args;
+  
+  my $start = time();
+  my $bytes = 0;
+  open( my $i, "tar cvvf - $args |" ) or die "source data open error: $@\n";
+  while(4)
+    {
+    my $res = $i->read( $_, $BUFSIZE );
+    last unless $res;
+    $bytes += $res;
+    $sock->print( $_ );
+    }
+  close( $i );
+  report_stats( $start, $bytes );
+}
+
+sub mode_pull
+{
+  print "client mode: ";
+  
+  my $peer = find_peer( $PULL_PORT, $PUSH_PORT );
+  return unless $peer;
+  sleep(1);
+  
+  my $sock;
+  my $c = $PEER_WAIT;
+  print "connecting to $peer:$DATA_PORT ...";
+  while( $c-- )
+    {
+    $sock = IO::Socket::INET->new( PeerPort  => $DATA_PORT,
+                                   PeerAddr  => $peer,
+                                   Proto     => 'tcp',
+                                   Timeout   => 32, );
+    last if $sock;
+    print ".";
+    sleep 1;
+    }                              
+  die "connect: socket error: $@\n" if $@;
+  die "connection timeout\n" unless $sock;
+  print "\n";
+  
+  my $start = time();
+  my $bytes = 0;
+  open( my $o, "| tar xpvvf -" ) or die "target data open error: $@\n";
+  while(4)
+    {
+    my $res = $sock->read( $_, $BUFSIZE );
+    last unless $res;
+    $bytes += $res;
+    $o->print( $_ );
+    }
+  close( $o );
+  report_stats( $start, $bytes );
+}
+
+##############################################################################
+
+sub report_stats
+{
+  my $start = shift;
+  my $bytes = shift;
+  
+  my $time = time() - $start;
+  
+  my $speed = $time > 0 ? int( $bytes / $time ) : $bytes;
+  
+  $speed = num_fmt( $speed );
+  $bytes = num_fmt( $bytes );
+  $time  = num_fmt( $time  );
+  
+  print "$bytes bytes in $time seconds, $speed bps\n";
+}
+
+sub num_fmt
+{
+  my $data = shift;
+  $data = reverse $data;
+  $data =~ s/(\d\d\d)/$1'/g;
+  $data =~ s/'$//;
+  $data = reverse $data;
+  return $data;
+}
+
+sub find_peer
+{
+  my $local_port  = shift;
+  my $remote_port = shift;
+
+  my $sock = IO::Socket::INET->new( LocalPort => $local_port,
+                                    LocalAddr => '0.0.0.0',
+                                    Proto     => 'udp',
+                                    Broadcast => 1,
+                                    ) 
+                                  or die "find listen socket error: $@\n";
+                                  
+  my $select = IO::Select->new();
+  my $peer;
+
+  $select->add( $sock );
+  
+  my $wait = $PEER_WAIT;
+  print "searching peer ...";
+  while( $wait-- )
+    {
+    ping_friend( $remote_port, $_, 'PING' ) for keys %FRIENDS;
+    
+    my $msg;
+    if( $select->can_read( 1 ) )
+      {
+      $sock->recv( $msg, 128, 0 );
+      $peer = $sock->peerhost();
+      print "\npeer found at $peer\n";
+      ping_friend( $remote_port, $peer, 'PING' ) for 1 .. $CONFIRM_COUNT;
+      $FRIENDS{ $peer }++;
+      return $peer;  
+      }
+    print ".";
+    sleep 1;
+    }
+  print "\npeer not found\n";
+  return undef;  
+}
+
+sub ping_friend
+{
+  my $remote_port = shift;
+  my $remote_host = shift;
+  my $msg         = shift;
+#print ">>> $remote_host, ", ( $BROADCAST_OPT{ $remote_host } || 0 ), "\n";
+  my $sock = IO::Socket::INET->new( PeerPort  => $remote_port,
+                                    PeerAddr  => $remote_host,
+                                    Proto     => 'udp',
+                                    Broadcast => ( $BROADCAST_OPT{ $remote_host } || 0 ), 
+                                    ) 
+                                  or die "ping friend socket error: $@\n";
+  $sock->send( $msg );
+  return;
+}
+
+### utilities ################################################################
+
+sub load_file
+{
+  my $file = shift;
+  open( my $i, $file ) or return undef;
+  local $/ = undef;
+  my $s = <$i>;
+  close $i;
+  return $s;
+}
+
+sub save_file
+{
+  my $file = shift;
+  open( my $o, ">$file" ) or return undef;
+  print $o @_;
+  close( $o );
+  return 1;
+}
+
+sub load_hash
+{
+  my $file = shift;
+  my %opt = @_;
+  my %h;
+  for( split( /[\n\r]+/, load_file( $file ) ) )
+    {
+    next unless /(.+?)(?<!\\)=(.*)/;
+    my $k = $1;
+    my $v = $2;
+    $k =~ s/\\(.)/$1/go;
+    $v =~ s/\\(.)/$1/go;
+    $k = uc $k if $opt{ 'KEY_UC' };
+    $k = lc $k if $opt{ 'KEY_LC' };
+    $v = uc $v if $opt{ 'VAL_UC' };
+    $v = lc $v if $opt{ 'VAL_LC' };
+    $h{ $k } = $v;
+    }
+  return \%h;  
+}
+
+sub save_hash
+{
+  my $file = shift;
+  my $hr = shift;
+  open( my $o, ">$file" ) or return undef;
+  while( my ( $k, $v ) = each %$hr )
+    {
+    $k =~ s/=/\\=/g;
+    print $o "$k=$v\n";
+    }
+  close( $o );
+  return 1;
+}
+
+### eof ######################################################################
+

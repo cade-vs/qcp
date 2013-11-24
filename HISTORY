@@ -1,0 +1,28 @@
+
+   ----------------------------------------------------------------------
+
+   QCP Quick Quake Network Copy
+   2005-2013 (c) Vladi Belperchinov-Shabanski "Cade"
+   <cade@biscom.net>   <cade@datamax.bg>   <cade@epay.bg>
+   http://cade.datamax.bg/
+
+   ----------------------------------------------------------------------
+
+   HISTORY (CHANGE.LOG)
+
+      + feature add
+      - feature changed
+      x feature removed
+      ! bugfix
+      % note
+
+   2.00: 24.Nov.2013
+   
+   - 1. entire network discovery code was rewritten, 
+        now uses simple single broadcast.
+
+   1.00: Somewhere in 2005
+   
+   % 1. initial version, all history before it is lost
+
+   ----------------------------------------------------------------------
