@@ -29,11 +29,11 @@ QCP uses tar to pack transferred data.
 
 To send files you only need to give files/directories names as arguments:
 
-  qcp file1 file2 files dir1 dir2...
+    qcp file1 file2 files dir1 dir2...
   
 The remote end does not require any arguments:
 
-  qcp
+    qcp
   
 It does not matter which side will be started first!
 
