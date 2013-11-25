@@ -96,6 +96,8 @@ credits:
                 <cade@bis.bg> <cade@cpan.org> <cade@datamax.bg>
 ';
 
+our $VER = "qcp v$QCP_REV\n";
+
 ### opts #####################################################################
 
 our @args;
@@ -149,6 +151,11 @@ while( $_ = shift @ARGV )
   if( /^(--?h(elp)?|help)$/io )
     {
     print $HELP;
+    exit;
+    }
+  if( /^(--?v(ersion|er)?|version)$/io )
+    {
+    print $VER;
     exit;
     }
   push @args, $_;
