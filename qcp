@@ -73,7 +73,7 @@ by default qcp will try to auto-discover both peers (server and client side)
 
 options:
   -a host     -- add peer host to the peers list (optional subnet broadcast)
-  -h host     -- connect to this peer host address, no broadcast!
+  -e host     -- connect to this peer host address, no broadcast!
   -s          -- force server mode (regardless file arguments)
   -c          -- force client mode (regardless file arguments)
   -w seconds  -- sets timeout wait in seconds for all operations
@@ -111,7 +111,7 @@ while( $_ = shift @ARGV )
     $PEERS{ shift() }++;
     next;
     }
-  if( /^-h/io )
+  if( /^-e/io )
     {
     %PEERS = ();
     $PEERS{ shift() }++;
@@ -122,6 +122,18 @@ while( $_ = shift @ARGV )
     {
     $PEER_WAIT = shift;
     $PEER_WAIT = 60 if $PEER_WAIT < 1;
+    next;
+    }
+  if( /^-p/io )
+    {
+    my $p = shift;
+    $p =~ /(\d*)(:(\d*)(:(\d*))?)?/;
+    $ANNO_PORT     = $1 || 28701; # announce port
+    $DATA_PORT_LO  = $3 || 28710;
+    $DATA_PORT_HI  = $5 || $3 || 28790;
+    ( $DATA_PORT_LO, $DATA_PORT_HI ) = ( $DATA_PORT_HI, $DATA_PORT_LO ) if $DATA_PORT_LO > $DATA_PORT_HI;
+    die "announce port ($ANNO_PORT) must not be in the data range ($DATA_PORT_LO..$DATA_PORT_HI)\n" if $DATA_PORT_LO <= $ANNO_PORT and $ANNO_PORT <= $DATA_PORT_HI;
+    print "using ports: announce: $ANNO_PORT, data: $DATA_PORT_LO..$DATA_PORT_HI\n";
     next;
     }
   if( /^-s/io )
@@ -238,7 +250,7 @@ sub num_fmt
 
 sub server_announce
 {
-  my $pcnt = $DATA_PORT_HI - $DATA_PORT_LO;
+  my $pcnt = $DATA_PORT_HI - $DATA_PORT_LO + 1;
   my $pcc  = $DATA_PORT_LO + int(rand($pcnt));
 
   my $server_sock;
