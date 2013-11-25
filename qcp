@@ -79,6 +79,7 @@ options:
   -w seconds  -- sets timeout wait in seconds for all operations
   -p p1:p2:p3 -- sets announce port (p1) and data port range (p2..p3)
                  default are: announce 28701, data range 28710..28790  
+  -v          -- print version info
   --          -- end of options, arguments after "--" are files
 
 notes:
