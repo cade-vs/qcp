@@ -4,6 +4,7 @@
 #  QCPv2 -- Quick Quake Network Copy :)
 #  2005-2013 (c) Vladi Belperchinov-Shabanski "Cade" 
 #  <cade@cpan.org> <cade@bis.bg> <cade@biscom.net> <cade@datamax.bg>
+#  v 2.1 2013/12/29
 #  v 2.0 2013/11/23
 #  v 1.9 2005/02/04
 #
@@ -31,7 +32,7 @@ use IO::Select;
 
 my ( $me ) = $0 =~ /([^\/]+)$/g;
 
-our $QCP_REV       = "2";
+our $QCP_REV       = "2.1";
 
 our $ANNO_PORT     = 28701; # announce port
 our $DATA_PORT_LO  = 28710;
@@ -72,15 +73,16 @@ receiving files (client side) needs no arguments at all:
 by default qcp will try to auto-discover both peers (server and client side)
 
 options:
-  -a host     -- add peer host to the peers list (optional subnet broadcast)
-  -e host     -- connect to this peer host address, no broadcast!
-  -s          -- force server mode (regardless file arguments)
-  -c          -- force client mode (regardless file arguments)
-  -w seconds  -- sets timeout wait in seconds for all operations
-  -p p1:p2:p3 -- sets announce port (p1) and data port range (p2..p3)
-                 default are: announce 28701, data range 28710..28790  
-  -v          -- print version info
-  --          -- end of options, arguments after "--" are files
+  -a host      -- add peer host to the peers list (optional subnet broadcast)
+  -e host:port -- connect to this peer host address, no broadcast!
+  -l port      -- switches to listen side, regardless mode
+  -s           -- force server mode (regardless file arguments)
+  -c           -- force client mode (regardless file arguments)
+  -w seconds   -- sets timeout wait in seconds for all operations
+  -p p1:p2:p3  -- sets announce port (p1) and data port range (p2..p3)
+                  default are: announce 28701, data range 28710..28790  
+  -v           -- print version info
+  --           -- end of options, arguments after "--" are files
 
 notes:
   * any argument starting with dash "-" is considered an option
@@ -89,6 +91,10 @@ notes:
   * only the one side (sender or receiver) needs -a
   * -p does not broadcast! it will accept only specified host
   * qcp remembers peers so -a is required just the first time
+  * if both -l and -e are specified, last one will be used
+  * by default the server side is listening for connections, however you
+    can change this by using -e and -l. both -e and -l can be used either
+    on server or on client sides.
 
 credits:
   QCP is short for Quick Quake Network Copy :)
@@ -100,6 +106,9 @@ credits:
 our $VER = "qcp v$QCP_REV\n";
 
 ### opts #####################################################################
+
+my $opt_listen;
+my $opt_connect_to;
 
 our @args;
 while( $_ = shift @ARGV )
@@ -116,9 +125,12 @@ while( $_ = shift @ARGV )
     }
   if( /^-e/io )
     {
-    %PEERS = ();
-    $PEERS{ shift() }++;
-    # FIXME: skip broadcast in this case
+    $opt_connect_to = shift();
+    next;
+    }
+  if( /^-l/io )
+    {
+    $opt_listen = shift();
     next;
     }
   if( /^-w/io )
@@ -174,7 +186,7 @@ die "no such mode '$MODE'\n" unless $mr;
 
 $mr->();
 
-save_hash( "$CFG_DIR/friends", \%PEERS );
+save_hash( "$CFG_DIR/peers", \%PEERS );
 
 ##############################################################################
 
@@ -184,7 +196,19 @@ sub mode_push
   my $argc_s = $argc > 1 ? 'items' : 'item';
   print "server mode, offering $argc $argc_s: ";
   
-  my $peer_sock = server_announce();
+  my $peer_sock;
+  if( $opt_listen )
+    {
+    $peer_sock = listen_socket( $opt_listen );
+    }
+  elsif( $opt_connect_to )
+    {
+    $peer_sock = connect_to_socket( $opt_connect_to );
+    }
+  else
+    {    
+    $peer_sock = server_announce();
+    }
   return unless $peer_sock;
 
   for( @args )
@@ -211,7 +235,19 @@ sub mode_pull
 {
   print "client mode: ";
 
-  my $peer_sock = client_find_server();
+  my $peer_sock;
+  if( $opt_listen )
+    {
+    $peer_sock = listen_socket( $opt_listen );
+    }
+  elsif( $opt_connect_to )
+    {
+    $peer_sock = connect_to_socket( $opt_connect_to );
+    }
+  else
+    {    
+    $peer_sock = client_find_server();
+    }
   return unless $peer_sock;
 
   my $start = time();
@@ -365,6 +401,63 @@ sub client_find_server
                                          PeerAddr  => $peer_host,
                                          Proto     => 'tcp',
                                          Timeout   => $PEER_WAIT, );
+                                         
+  die "connection error: $!\n" unless $peer_sock;
+                                         
+  return $peer_sock;  
+}
+
+sub listen_socket
+{
+  my $listen_port = shift;
+
+  my $server_sock = IO::Socket::INET->new( 
+                                          LocalPort => $listen_port,
+                                          Proto     => 'tcp',
+                                          Listen    => 5,
+                                          Timeout   => 1,
+                                          ReuseAddr => 1 
+                                        );
+  die "listen: socket error: $@\n" if ! $server_sock and ! $!{EADDRINUSE};
+  
+  my $sock;
+  my $wait = $PEER_WAIT;
+  while( $wait-- )
+    {
+    $sock = $server_sock->accept();
+    last if $sock;
+    print ".";
+    }
+  if( ! $sock )
+    {
+    die "timeout\n";
+    }
+  
+  my $peer_host = $sock->peerhost();
+  print "connected from: $peer_host\n";
+
+  return $sock;
+}
+
+sub connect_to_socket
+{
+  my $connect_to = shift();
+
+  $connect_to .= ":$DATA_PORT_LO" unless $connect_to =~ /:\d+$/;
+  
+  my $peer_sock;
+  
+  my $wait = $PEER_WAIT;
+  print "searching peer...";
+  while( $wait-- )
+    {
+    $peer_sock = IO::Socket::INET->new( PeerAddr  => $connect_to,
+                                        Proto     => 'tcp',
+                                        Timeout   => 1, );
+    last if $peer_sock;
+    sleep(1);                                    
+    print ".";
+    }                                    
                                          
   die "connection error: $!\n" unless $peer_sock;
                                          

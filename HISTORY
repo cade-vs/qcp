@@ -16,12 +16,17 @@
       ! bugfix
       % note
 
-   2.00: 24.Nov.2013
+   2.1: 29.Dec.2013
+   
+   + 1. -l option added, switches to listening side
+   + 2. -e option modified, switches to connect side
+   
+   2.0: 24.Nov.2013
    
    - 1. entire network discovery code was rewritten, 
         now uses simple single broadcast.
 
-   1.00: Somewhere in 2005
+   1.0: Somewhere in 2005
    
    % 1. initial version, all history before it is lost
 

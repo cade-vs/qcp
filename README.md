@@ -37,6 +37,18 @@ The remote end does not require any arguments:
   
 It does not matter which side will be started first!
 
+By default the server side is in listening mode and the client tries to 
+connect to the server. You can change sides:
+
+    # client side listens for server to connect on port 2233
+    qcp -l 2233
+    
+    # server side connects to the client on port 2233
+    qcp -e ipaddr:2233 files...
+    
+Both options -e and -l disable the broadcasting auto-discovery. This may
+be used between firewalled networks etc.    
+
 # REQUIREMENTS
 
 Perl with few standard modules:
