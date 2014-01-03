@@ -56,6 +56,17 @@ To use symmetric cryptography:
     
     # ask interactively for password
     qcp -s ask
+    
+    # use specific cypher
+    qcp -s ask -S Twofish2
+
+To use compression:
+
+    # send
+    qcp -z files...
+    
+    # receive
+    qcp -z
 
 # REQUIREMENTS
 
@@ -80,14 +91,24 @@ QCP uses the following cyphers (in this order):
   * Crypt::Twofish
   * Crypt::Rijndael
   
-# INSTALLING PERL MODULES
+# INSTALLING PERL, PERL MODULES AND REQUIRED SOFTWARE
 
-With debian apt-get:
-
+Install required software and perl modules with debian apt-get:
+  
+  apt-get install perl
+  apt-get install tar
   apt-get install libterm-readkey-perl 
   apt-get install libcrypt-cbc-perl
   apt-get install libcrypt-rijndael-perl
   apt-get install libcrypt-twofish-perl
+
+Install required perl modules with CPAN:
+
+  cpan Term::ReadKey
+  cpan Crypt::CBC
+  cpan Crypt::Rijndael
+  cpan Crypt::Twofish
+  cpan Crypt::Twofish2
 
 # TODO
 
