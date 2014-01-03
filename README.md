@@ -136,6 +136,6 @@ to the name with the suggestion for copying quake data files :)) thanks.
 
     Vladi Belperchinov-Shabanski "Cade"
 
-    <cade@cpan.org> <cade@biscom.net> <cade@datamax.bg>
+    <cade@cpan.org> <cade@bis.bg> <cade@biscom.net> <cade@datamax.bg>
 
     http://cade.datamax.bg
