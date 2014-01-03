@@ -124,7 +124,7 @@ fixed in the future.
 # CREDITS
 
 QCP was inspired by NCP (http://www.fefe.de/ncp/) which site also contributed
-to the name with the suggestion for copying quake data files :))) thanks.
+to the name with the suggestion for copying quake data files :)) thanks.
 
 # GITHUB REPOSITORY
 
