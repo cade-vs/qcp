@@ -94,21 +94,21 @@ QCP uses the following cyphers (in this order):
 # INSTALLING PERL, PERL MODULES AND REQUIRED SOFTWARE
 
 Install required software and perl modules with debian apt-get:
-  
-  apt-get install perl
-  apt-get install tar
-  apt-get install libterm-readkey-perl 
-  apt-get install libcrypt-cbc-perl
-  apt-get install libcrypt-rijndael-perl
-  apt-get install libcrypt-twofish-perl
+
+    apt-get install perl
+    apt-get install tar
+    apt-get install libterm-readkey-perl 
+    apt-get install libcrypt-cbc-perl
+    apt-get install libcrypt-rijndael-perl
+    apt-get install libcrypt-twofish-perl
 
 Install required perl modules with CPAN:
 
-  cpan Term::ReadKey
-  cpan Crypt::CBC
-  cpan Crypt::Rijndael
-  cpan Crypt::Twofish
-  cpan Crypt::Twofish2
+    cpan Term::ReadKey
+    cpan Crypt::CBC
+    cpan Crypt::Rijndael
+    cpan Crypt::Twofish
+    cpan Crypt::Twofish2
 
 # TODO
 
