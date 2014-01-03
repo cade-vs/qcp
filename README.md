@@ -49,24 +49,56 @@ connect to the server. You can change sides:
 Both options -e and -l disable the broadcasting auto-discovery. This may
 be used between firewalled networks etc.    
 
+To use symmetric cryptography:
+
+    # use "www.bis.bg" as password
+    qcp -s www.bis.bg
+    
+    # ask interactively for password
+    qcp -s ask
+
 # REQUIREMENTS
 
 Perl with few standard modules:
 
-  * IO::Socket::INET;
-  * IO::Select;
+  * IO::Socket::INET
+  * IO::Select
 
 tar
 
 No specific version of perl or tar is required, any recent one should 
 be sufficient.
 
+For further features, other modules are required:
+
+  * Term::ReadKey  -- used for safe password entry
+  * Crypt::CBC     -- cryptography module
+  
+QCP uses the following cyphers (in this order):
+
+  * Crypt::Twofish2
+  * Crypt::Twofish
+  * Crypt::Rijndael
+  
+# INSTALLING PERL MODULES
+
+With debian apt-get:
+
+  apt-get install libterm-readkey-perl 
+  apt-get install libcrypt-cbc-perl
+  apt-get install libcrypt-rijndael-perl
+  apt-get install libcrypt-twofish-perl
+
 # TODO
 
 * domain keys
 * authentication (combine with domain keys?)
-* encryption
-* compression
+
+# KNOWN PROBLEMS
+
+If both sides are run in the same MODE (server/push or client/pull) and direct
+listen (-l) and connect (-e) options are used, qcp will block. This will be
+fixed in the future.
 
 # CREDITS
 

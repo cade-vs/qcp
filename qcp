@@ -2,8 +2,9 @@
 ##############################################################################  
 #
 #  QCPv2 -- Quick Quake Network Copy :)
-#  2005-2013 (c) Vladi Belperchinov-Shabanski "Cade" 
+#  2005-2014 (c) Vladi Belperchinov-Shabanski "Cade" 
 #  <cade@cpan.org> <cade@bis.bg> <cade@biscom.net> <cade@datamax.bg>
+#  v 3.0 2014/01/03
 #  v 2.1 2013/12/29
 #  v 2.0 2013/11/23
 #  v 1.9 2005/02/04
@@ -52,6 +53,7 @@ our %MODE = (
             );
 
 our $MODE;
+our $CYPHER;
 
 our $CFG_DIR       = $ENV{ 'HOME' } . "/.qcp";
 mkdir( $CFG_DIR, 0700 ) unless -d $CFG_DIR;
@@ -73,16 +75,20 @@ receiving files (client side) needs no arguments at all:
 by default qcp will try to auto-discover both peers (server and client side)
 
 options:
-  -a host      -- add peer host to the peers list (optional subnet broadcast)
-  -e host:port -- connect to this peer host address, no broadcast!
-  -l port      -- switches to listen side, regardless mode
-  -s           -- force server mode (regardless file arguments)
-  -c           -- force client mode (regardless file arguments)
-  -w seconds   -- sets timeout wait in seconds for all operations
-  -p p1:p2:p3  -- sets announce port (p1) and data port range (p2..p3)
-                  default are: announce 28701, data range 28710..28790  
-  -v           -- print version info
-  --           -- end of options, arguments after "--" are files
+  -a host       -- add peer host to the peers list (optional subnet broadcast)
+  -e host:port  -- connect to this peer host address, no broadcast!
+  -l port       -- switches to listen side, regardless mode
+  -s            -- force server mode (regardless file arguments)
+  -c            -- force client mode (regardless file arguments)
+  -w seconds    -- sets timeout wait in seconds for all operations
+  -p p1:p2:p3   -- sets announce port (p1) and data port range (p2..p3)
+                   default are: announce 28701, data range 28710..28790  
+  -s <password> -- use symmetric CBC cryptography with "password"
+  -s ask        -- same as above, but will ask for password interactively
+  -S <cypher>   -- use cypher for encryption (i.e. perl Crypt::CBC cypher)
+  -z            -- use compression
+  -v            -- print version info
+  --            -- end of options, arguments after "--" are files
 
 notes:
   * any argument starting with dash "-" is considered an option
@@ -109,6 +115,10 @@ our $VER = "qcp v$QCP_REV\n";
 
 my $opt_listen;
 my $opt_connect_to;
+my $opt_crypto;
+my $opt_crypto_pass;
+my $opt_crypto_cypher;
+my $opt_compress;
 
 our @args;
 while( $_ = shift @ARGV )
@@ -131,6 +141,23 @@ while( $_ = shift @ARGV )
   if( /^-l/io )
     {
     $opt_listen = shift();
+    next;
+    }
+  if( /^-s/o )
+    {
+    $opt_crypto = 1;
+    $opt_crypto_pass = shift();
+    next;
+    }
+  if( /^-S/o )
+    {
+    $opt_crypto_cypher = shift();
+    $opt_crypto_cypher = "Crypt::$opt_crypto_cypher" unless $opt_crypto_cypher =~ /^Crypt::/;
+    next;
+    }
+  if( /^-z/o )
+    {
+    $opt_compress = 1;
     next;
     }
   if( /^-w/io )
@@ -176,13 +203,63 @@ while( $_ = shift @ARGV )
 
 my $peers = load_hash( "$CFG_DIR/peers" );
 %PEERS = ( %PEERS, %$peers ) if $peers;
-
             
 $MODE ||= @args ? 'push' : 'pull';
 
 my $mr = $MODE{ $MODE };
 
 die "no such mode '$MODE'\n" unless $mr;
+
+if( $opt_crypto )
+  {
+  if( uc( $opt_crypto_pass ) eq 'ASK' )
+    {
+    eval
+      {
+      require Term::ReadKey;
+      };
+    if( $@ )
+      {
+      print STDERR "warning: Term::ReadKey is not available, password will be visible!\n";
+      print STDERR "enter transport password: ";
+      $opt_crypto_pass = <STDIN>;
+      }
+    else
+      {
+      print STDERR "enter transport password: ";
+      Term::ReadKey::ReadMode( 'noecho' );
+      $opt_crypto_pass = Term::ReadKey::ReadLine(0);
+      Term::ReadKey::ReadMode( 'restore' );
+      print STDERR "\n";
+      }
+    }
+  chomp( $opt_crypto_pass );
+  die "error: empty password is not allowed\n" unless length( $opt_crypto_pass ) > 0;
+  
+  eval
+    {
+    require Crypt::CBC;
+    };
+  if( $@ )  
+    {
+    die "error: Crypt::CBC is not available, cryptography disabled\n";
+    }
+  my @cyphers = $opt_crypto_cypher ? ( $opt_crypto_cypher ) : qw( Crypt::Twofish2 Crypt::Twofish Crypt::Rijndael );
+  for my $cypher ( @cyphers )
+    {
+    eval
+      {
+      # print "status: trying cypher: $cypher\n";
+      $CYPHER = Crypt::CBC->new( -cipher => $cypher, -key => $opt_crypto_pass, );
+      };
+    if( ! $@ )
+      {
+      print "status: cypher used: $cypher\n";
+      last;
+      }
+    }
+  die "error: Crypt::CBC or Crypt::* cyphers are not available, cryptography disabled\n" unless $CYPHER;  
+  }  
 
 $mr->();
 
@@ -216,18 +293,31 @@ sub mode_push
     $_ = /'/ ? "\"$_\"" : "\'$_\'" # '
     }
   my $args = join ' ', @args;
+  my $z = 'z' if $opt_compress;  
   
   my $start = time();
   my $bytes = 0;
-  open( my $i, "tar cvvf - $args |" ) or die "source data open error: $@\n";
+  if( $CYPHER )
+    {
+    $CYPHER->start( 'encrypting' );
+    }
+  open( my $i, "tar c${z}vvf - $args |" ) or die "source data open error: $@\n";
   while(4)
     {
     my $res = $i->read( $_, $BUFSIZE );
     last unless $res;
+    if( $CYPHER )
+      {
+      $_ = $CYPHER->crypt( $_ );
+      }
     $bytes += $res;
     $peer_sock->print( $_ );
     }
   close( $i );
+  if( $CYPHER )
+    {
+    $CYPHER->finish();
+    }
   report_stats( $start, $bytes );
 }
 
@@ -250,17 +340,31 @@ sub mode_pull
     }
   return unless $peer_sock;
 
+  my $z = 'z' if $opt_compress;  
+
   my $start = time();
   my $bytes = 0;
-  open( my $o, "| tar xpvvf -" ) or die "target data open error: $@\n";
+  if( $CYPHER )
+    {
+    $CYPHER->start( 'decrypting' );
+    }
+  open( my $o, "| tar x${z}pvvf -" ) or die "target data open error: $@\n";
   while(4)
     {
     my $res = $peer_sock->read( $_, $BUFSIZE );
     last unless $res;
+    if( $CYPHER )
+      {
+      $_ = $CYPHER->crypt( $_ );
+      }
     $bytes += $res;
     $o->print( $_ );
     }
   close( $o );
+  if( $CYPHER )
+    {
+    $CYPHER->finish();
+    }
   report_stats( $start, $bytes );
 }
 

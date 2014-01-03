@@ -2,7 +2,7 @@
    ----------------------------------------------------------------------
 
    QCP Quick Quake Network Copy
-   2005-2013 (c) Vladi Belperchinov-Shabanski "Cade"
+   2005-2014 (c) Vladi Belperchinov-Shabanski "Cade"
    <cade@biscom.net>   <cade@datamax.bg>   <cade@epay.bg>
    http://cade.datamax.bg/
 
@@ -15,6 +15,11 @@
       x feature removed
       ! bugfix
       % note
+
+   3.0: 03.Jan.2014
+   
+   + 1. symmetric cryptography added (options -s and -S)
+   + 2. compression added (option -z)
 
    2.1: 29.Dec.2013
    
