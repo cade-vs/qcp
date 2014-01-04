@@ -33,7 +33,7 @@ use IO::Select;
 
 my ( $me ) = $0 =~ /([^\/]+)$/g;
 
-our $QCP_REV       = "2.1";
+our $QCP_REV       = "3.0";
 
 our $ANNO_PORT     = 28701; # announce port
 our $DATA_PORT_LO  = 28710;
