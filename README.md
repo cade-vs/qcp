@@ -18,9 +18,8 @@ mode and the peer host. The main purpose is to transfer files between
 machines in the most simple way possible, i.e. with only specifying the files
 needed to be send.
 
-Currently it is not safe to be used on public networks and it does not 
-provide authentication and encryption. 
-(see TODO chapter below)
+It is not safe to be used on public networks unless encryption is used! 
+See below for examples how to enable encryption.
 
 QCP uses tar to pack transferred data.
 (see REQUIREMENTS chapter below)
