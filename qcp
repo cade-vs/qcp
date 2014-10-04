@@ -78,7 +78,7 @@ options:
   -a host       -- add peer host to the peers list (optional subnet broadcast)
   -e host:port  -- connect to this peer host address, no broadcast!
   -l port       -- switches to listen side, regardless mode
-  -s            -- force server mode (regardless file arguments)
+  -r            -- force server mode (regardless file arguments)
   -c            -- force client mode (regardless file arguments)
   -w seconds    -- sets timeout wait in seconds for all operations
   -p p1:p2:p3   -- sets announce port (p1) and data port range (p2..p3)
@@ -178,7 +178,7 @@ while( $_ = shift @ARGV )
     print "using ports: announce: $ANNO_PORT, data: $DATA_PORT_LO..$DATA_PORT_HI\n";
     next;
     }
-  if( /^-s/io )
+  if( /^-r/io )
     {
     $MODE = 'push';
     next;
