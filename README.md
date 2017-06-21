@@ -74,7 +74,6 @@ To use compression:
 Perl with few standard modules:
 
   * IO::Socket::INET
-  * IO::Select
 
 tar
 
