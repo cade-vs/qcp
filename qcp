@@ -28,7 +28,6 @@
 ##############################################################################
 use strict;
 use IO::Socket::INET;
-use IO::Select;
 #use Data::Dumper;
 
 my ( $me ) = $0 =~ /([^\/]+)$/g;
@@ -466,18 +465,15 @@ sub client_find_server
                                    ) 
                                   or die "find listen socket error: $@\n";
                                   
-  my $select = IO::Select->new();
   my $peer_host;
   my $peer_port;
 
-  $select->add( $lsock );
-  
   my $wait = $PEER_WAIT;
   print "searching peer...";
   while( $wait-- )
     {
     my $msg;
-    if( ! $select->can_read( 1 ) )
+    if( ! socket_can_read( $lsock, 1 ) )
       {
       print ".";
       sleep 1;
@@ -622,6 +618,26 @@ sub save_hash
     }
   close( $o );
   return 1;
+}
+
+sub socket_can_write
+{
+  my $sock    = shift;
+  my $timeout = shift;
+
+  my $win;
+  vec( $win, fileno( $sock ), 1 ) = 1;
+  return select( undef, $win, undef, $timeout ) > 0;
+}
+
+sub socket_can_read
+{
+  my $sock    = shift;
+  my $timeout = shift;
+
+  my $rin;
+  vec( $rin, fileno( $sock ), 1 ) = 1;
+  return select( $rin, undef, undef, $timeout ) > 0;
 }
 
 ### eof ######################################################################
