@@ -2,8 +2,10 @@
 ##############################################################################  
 #
 #  QCPv2 -- Quick Quake Network Copy :)
-#  2005-2014 (c) Vladi Belperchinov-Shabanski "Cade" 
-#  <cade@cpan.org> <cade@bis.bg> <cade@biscom.net> <cade@datamax.bg>
+#  Copyright (c) 2005-2024 Vladi Belperchinov-Shabanski "Cade" 
+#        <cade@noxrun.com> <cade@bis.bg> <cade@cpan.org>
+#  http://cade.noxrun.com/  
+#
 #  v 3.0 2014/01/03
 #  v 2.1 2013/12/29
 #  v 2.0 2013/11/23
@@ -104,8 +106,9 @@ notes:
 credits:
   QCP is short for Quick Quake Network Copy :)
   QCP is inspired by ncp (http://www.fefe.de/ncp/) but implemented in Perl
-  2005-2013 (c) Vladi Belperchinov-Shabanski "Cade"
-                <cade@bis.bg> <cade@cpan.org> <cade@datamax.bg>
+  Copyright (c) 2005-2024 Vladi Belperchinov-Shabanski "Cade"
+                <cade@noxrun.com> <cade@bis.bg> <cade@cpan.org>
+                http://cade.noxrun.com/
 ';
 
 our $VER = "qcp v$QCP_REV\n";

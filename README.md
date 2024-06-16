@@ -134,8 +134,7 @@ to the name with the suggestion for copying quake data files :)) thanks.
 
 # AUTHOR
 
-    Vladi Belperchinov-Shabanski "Cade"
+    Copyright (c) 2005-2024 Vladi Belperchinov-Shabanski "Cade"
+          <cade@noxrun.com> <cade@bis.bg> <cade@cpan.org>
+    http://cade.noxrun.com/  
 
-    <cade@cpan.org> <cade@bis.bg> <cade@biscom.net> <cade@datamax.bg>
-
-    http://cade.datamax.bg
